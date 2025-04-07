@@ -112,6 +112,8 @@ class Planner:
                 Log of V(s) for each iteration.
             pi : dict
                 Policy mapping states to actions.
+            pi_track : list
+                List of policy mapping per iteration
         """
         S = len(self.P)
         A = len(self.P[0])
@@ -136,6 +138,7 @@ class Planner:
 
         V = np.zeros(S, dtype=dtype)
         V_track = np.zeros((n_iters, S), dtype=dtype)
+        pi_track = []
         converged = False
         # Simpler way to handle done states
         not_done_array = 1 - done_array
@@ -156,11 +159,12 @@ class Planner:
 
             V = V_new
             V_track[i] = V
+            pi_track.append(dict(enumerate(np.argmax(Q, axis=1))))
 
         if not converged:
             warnings.warn("Max iterations reached before convergence. Check n_iters.")
 
-        return V, V_track, dict(enumerate(np.argmax(Q, axis=1)))
+        return V, V_track, dict(enumerate(np.argmax(Q, axis=1))), pi_track
 
     def policy_iteration(self, gamma=1.0, n_iters=50, theta=1e-10, dtype=np.float32):
         """
@@ -184,10 +188,13 @@ class Planner:
                 Log of V(s) for each iteration.
             pi : dict
                 Policy mapping states to actions.
+            pi_track : list
+                List of policy mapping per iteration
         """
         random_actions = np.random.choice(tuple(self.P[0].keys()), len(self.P))
 
         pi = {s: a for s, a in enumerate(random_actions)}
+        pi_track = []
         # initial V to give to `policy_evaluation` for the first time
         V = np.zeros(len(self.P), dtype=dtype)
         V_track = np.zeros((n_iters, len(self.P)), dtype=dtype)
@@ -199,12 +206,13 @@ class Planner:
             V = self.policy_evaluation(pi, V, gamma=gamma, theta=theta, dtype=dtype)
             V_track[i] = V
             pi = self.policy_improvement(V, gamma=gamma, dtype=dtype)
+            pi_track.append(pi)
             if old_pi == pi:
                 converged = True
 
         if not converged:
             warnings.warn("Max iterations reached before convergence.  Check n_iters.")
-        return V, V_track, pi
+        return V, V_track, pi, pi_track
 
     def policy_evaluation(self, pi, prev_V, gamma=1.0, theta=1e-10, dtype=np.float32):
         """
