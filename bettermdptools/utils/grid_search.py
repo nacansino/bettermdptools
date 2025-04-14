@@ -27,10 +27,10 @@ class GridSearch:
                     i[2],
                 )
 
-            Q, V, pi, Q_track, pi_track, rewards = RL(env).q_learning(
+            Q, V, pi, Q_track, pi_track, rewards, walltime = RL(env).q_learning(
                 gamma=i[0], epsilon_decay_ratio=i[1], n_episodes=i[2]
             )
-            episode_rewards = TestEnv.test_env(env=env, n_iters=100, pi=pi)
+            episode_rewards = TestEnv.test_env(env=env, n_iters=1000, pi=pi)
             avg_reward = np.mean(episode_rewards)
             rewards_and_params_results.append({"avg_reward": avg_reward, "params": i})
             if avg_reward > highest_avg_reward:
@@ -60,7 +60,7 @@ class GridSearch:
                     i[2],
                 )
 
-            Q, V, pi, Q_track, pi_track, rewards = RL(env).sarsa(
+            Q, V, pi, Q_track, pi_track, rewards, walltime = RL(env).sarsa(
                 gamma=i[0], epsilon_decay_ratio=i[1], n_episodes=i[2]
             )
             episode_rewards = TestEnv.test_env(env=env, n_iters=100, pi=pi)
@@ -88,7 +88,7 @@ class GridSearch:
                     "running PI with gamma:", i[0], " n_iters:", i[1], " theta:", i[2]
                 )
 
-            V, V_track, pi = Planner(env.P).policy_iteration(
+            V, V_track, pi, pi_track, walltime = Planner(env.P).policy_iteration(
                 gamma=i[0], n_iters=i[1], theta=i[2]
             )
             episode_rewards = TestEnv.test_env(env=env, n_iters=100, pi=pi)
@@ -116,7 +116,7 @@ class GridSearch:
                     "running VI with gamma:", i[0], " n_iters:", i[1], " theta:", i[2]
                 )
 
-            V, V_track, pi = Planner(env.P).value_iteration(
+            V, V_track, pi, pi_track, walltime = Planner(env.P).value_iteration_vectorized(
                 gamma=i[0], n_iters=i[1], theta=i[2]
             )
             episode_rewards = TestEnv.test_env(env=env, n_iters=100, pi=pi)

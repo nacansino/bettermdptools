@@ -31,9 +31,9 @@ from bettermdptools.utils.callbacks import MyCallbacks
 
 
 class RL:
-    def __init__(self, env):
+    def __init__(self, env, callbacks=MyCallbacks()):
         self.env = env
-        self.callbacks = MyCallbacks()
+        self.callbacks = callbacks
         self.render = False
         # Explanation of lambda:
         # def select_action(state, Q, epsilon):
@@ -146,6 +146,8 @@ class RL:
                 Log of complete policy for each episode.
             rewards : np.ndarray
                 Rewards obtained in each episode.
+            walltime : float
+                Time taken to complete the training.
         """
         if nS is None:
             nS = self.env.observation_space.n
@@ -159,7 +161,8 @@ class RL:
             init_epsilon, min_epsilon, epsilon_decay_ratio, n_episodes
         )
         rewards = np.zeros(n_episodes, dtype=np.float32)
-        for e in tqdm(range(n_episodes), leave=False):
+        pbar = tqdm(range(n_episodes), desc="Training", unit="episodes", leave=False)
+        for e in pbar:
             self.callbacks.on_episode_begin(self)
             self.callbacks.on_episode(self, episode=e)
             state, info = self.env.reset()
@@ -194,7 +197,7 @@ class RL:
         V = np.max(Q, axis=1)
 
         pi = {s: a for s, a in enumerate(np.argmax(Q, axis=1))}
-        return Q, V, pi, Q_track, pi_track, rewards
+        return Q, V, pi, Q_track, pi_track, rewards, pbar.format_dict['elapsed']
 
     def sarsa(
         self,
@@ -266,8 +269,8 @@ class RL:
         epsilons = RL.decay_schedule(
             init_epsilon, min_epsilon, epsilon_decay_ratio, n_episodes
         )
-
-        for e in tqdm(range(n_episodes), leave=False):
+        pbar = tqdm(range(n_episodes), desc="Training", unit="episodes", leave=False)
+        for e in pbar:
             self.callbacks.on_episode_begin(self)
             self.callbacks.on_episode(self, episode=e)
             state, info = self.env.reset()
@@ -303,4 +306,216 @@ class RL:
         V = np.max(Q, axis=1)
 
         pi = {s: a for s, a in enumerate(np.argmax(Q, axis=1))}
-        return Q, V, pi, Q_track, pi_track, rewards
+        return Q, V, pi, Q_track, pi_track, rewards, pbar.format_dict['elapsed']
+
+    def sarsa_memeff(
+        self,
+        nS=None,
+        nA=None,
+        convert_state_obs=lambda state: state,
+        gamma=0.99,
+        init_alpha=0.5,
+        min_alpha=0.01,
+        alpha_decay_ratio=0.5,
+        init_epsilon=1.0,
+        min_epsilon=0.1,
+        epsilon_decay_ratio=0.9,
+        n_episodes=10000,
+    ):
+        """
+        SARSA algorithm.
+
+        Parameters
+        ----------
+        nS : int, optional
+            Number of states, by default None.
+        nA : int, optional
+            Number of available actions, by default None.
+        convert_state_obs : function, optional
+            Converts state into an integer, by default lambda state: state.
+        gamma : float, optional
+            Discount factor, by default 0.99.
+        init_alpha : float, optional
+            Initial learning rate, by default 0.5.
+        min_alpha : float, optional
+            Minimum learning rate, by default 0.01.
+        alpha_decay_ratio : float, optional
+            Decay schedule of learning rate for future iterations, by default 0.5.
+        init_epsilon : float, optional
+            Initial epsilon value for epsilon greedy strategy, by default 1.0.
+        min_epsilon : float, optional
+            Minimum epsilon, by default 0.1.
+        epsilon_decay_ratio : float, optional
+            Decay schedule of epsilon for future iterations, by default 0.9.
+        n_episodes : int, optional
+            Number of episodes for the agent, by default 10000.
+
+        Returns
+        -------
+        tuple
+            Q : np.ndarray
+                Final action-value function Q(s,a).
+            V : np.ndarray
+                State values array.
+            pi : dict
+                Policy mapping states to actions.
+            rewards : np.ndarray
+                Rewards obtained in each episode.
+            walltime : float
+                Time taken to complete the training.
+        """
+        if nS is None:
+            nS = self.env.observation_space.n
+        if nA is None:
+            nA = self.env.action_space.n
+        Q = np.zeros((nS, nA), dtype=np.float32)
+        rewards = []
+        alphas = RL.decay_schedule(init_alpha, min_alpha, alpha_decay_ratio, n_episodes)
+        epsilons = RL.decay_schedule(
+            init_epsilon, min_epsilon, epsilon_decay_ratio, n_episodes
+        )
+        pbar = tqdm(range(n_episodes), desc="Training", unit="episodes", leave=False)
+        for e in pbar:
+            self.callbacks.on_episode_begin(self)
+            self.callbacks.on_episode(self, episode=e)
+            state, info = self.env.reset()
+            done = False
+            state = convert_state_obs(state)
+            action = self.select_action(state, Q, epsilons[e])
+            total_reward = 0
+            while not done:
+                if self.render:
+                    warnings.warn(
+                        "Occasional render has been deprecated by openAI.  Use test_env.py to render."
+                    )
+                next_state, reward, terminated, truncated, _ = self.env.step(action)
+                if truncated:
+                    warnings.warn(
+                        "Episode was truncated.  TD target value may be incorrect."
+                    )
+                done = terminated or truncated
+                self.callbacks.on_env_step(self)
+                next_state = convert_state_obs(next_state)
+                next_action = self.select_action(next_state, Q, epsilons[e])
+                td_target = reward + gamma * Q[next_state][next_action] * (not done)
+                td_error = td_target - Q[state][action]
+                Q[state][action] = Q[state][action] + alphas[e] * td_error
+                state, action = next_state, next_action
+                total_reward += reward
+            rewards.append(total_reward)
+            self.render = False
+            self.callbacks.on_episode_end(self)
+
+        V = np.max(Q, axis=1)
+        rewards = np.array(rewards)
+
+        pi = {s: a for s, a in enumerate(np.argmax(Q, axis=1))}
+        return Q, V, pi, rewards, pbar.format_dict['elapsed']
+    
+
+    def q_learning_memeff(
+        self,
+        nS=None,
+        nA=None,
+        convert_state_obs=lambda state: state,
+        gamma=0.99,
+        init_alpha=0.5,
+        min_alpha=0.01,
+        alpha_decay_ratio=0.5,
+        init_epsilon=1.0,
+        min_epsilon=0.1,
+        epsilon_decay_ratio=0.9,
+        n_episodes=10000,
+    ):
+        """
+        Q-Learning algorithm.
+
+        Parameters
+        ----------
+        nS : int, optional
+            Number of states, by default None.
+        nA : int, optional
+            Number of available actions, by default None.
+        convert_state_obs : function, optional
+            Converts state into an integer, by default lambda state: state.
+        gamma : float, optional
+            Discount factor, by default 0.99.
+        init_alpha : float, optional
+            Initial learning rate, by default 0.5.
+        min_alpha : float, optional
+            Minimum learning rate, by default 0.01.
+        alpha_decay_ratio : float, optional
+            Decay schedule of learning rate for future iterations, by default 0.5.
+        init_epsilon : float, optional
+            Initial epsilon value for epsilon greedy strategy, by default 1.0.
+        min_epsilon : float, optional
+            Minimum epsilon, by default 0.1.
+        epsilon_decay_ratio : float, optional
+            Decay schedule of epsilon for future iterations, by default 0.9.
+        n_episodes : int, optional
+            Number of episodes for the agent, by default 10000.
+
+        Returns
+        -------
+        tuple
+            Q : np.ndarray
+                Final action-value function Q(s,a).
+            V : np.ndarray
+                State values array.
+            pi : dict
+                Policy mapping states to actions.
+            rewards : np.ndarray
+                Rewards obtained in each episode.
+            walltime : float
+                Time taken to complete the training.
+        """
+        if nS is None:
+            nS = self.env.observation_space.n
+        if nA is None:
+            nA = self.env.action_space.n
+        Q = np.zeros((nS, nA), dtype=np.float32)
+        alphas = RL.decay_schedule(init_alpha, min_alpha, alpha_decay_ratio, n_episodes)
+        epsilons = RL.decay_schedule(
+            init_epsilon, min_epsilon, epsilon_decay_ratio, n_episodes
+        )
+        rewards = []
+        pbar = tqdm(range(n_episodes), desc="Training", unit="episodes", leave=False)
+        for e in pbar:
+            self.callbacks.on_episode_begin(self)
+            self.callbacks.on_episode(self, episode=e)
+            state, info = self.env.reset()
+            done = False
+            state = convert_state_obs(state)
+            total_reward = 0
+            while not done:
+                if self.render:
+                    warnings.warn(
+                        "Occasional render has been deprecated by openAI.  Use test_env.py to render."
+                    )
+                action = self.select_action(state, Q, epsilons[e])
+                next_state, reward, terminated, truncated, _ = self.env.step(action)
+                if truncated:
+                    warnings.warn(
+                        "Episode was truncated.  TD target value may be incorrect."
+                    )
+                done = terminated or truncated
+                self.callbacks.on_env_step(self)
+                next_state = convert_state_obs(next_state)
+                td_target = reward + gamma * Q[next_state].max() * (not done)
+                td_error = td_target - Q[state][action]
+                Q[state][action] = Q[state][action] + alphas[e] * td_error
+                state = next_state
+                total_reward += reward
+            rewards.append(total_reward)
+            # calculate running average of rewards
+            if len(rewards) > 3000:
+                rolling_reward = np.mean(rewards[-3000:])
+                pbar.set_description(f"Current Reward: {rolling_reward:.2f}", refresh=True)
+            self.render = False
+            self.callbacks.on_episode_end(self)
+
+        V = np.max(Q, axis=1)
+        rewards = np.array(rewards)
+
+        pi = {s: a for s, a in enumerate(np.argmax(Q, axis=1))}
+        return Q, V, pi, rewards, pbar.format_dict['elapsed']

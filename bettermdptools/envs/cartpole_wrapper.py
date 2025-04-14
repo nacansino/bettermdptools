@@ -57,6 +57,8 @@ class CartpoleWrapper(gym.Wrapper):
         angular_velocity_bins=10,
         angular_center_resolution=0.1,
         angular_outer_resolution=0.5,
+        num_angular_center_bins=10,
+        timestep=0.02,
     ):
         """
         Cartpole wrapper that modifies the observation space and creates a transition/reward matrix P.
@@ -75,6 +77,8 @@ class CartpoleWrapper(gym.Wrapper):
             The resolution of angle bins near the center (around zero).
         angular_outer_resolution : float, optional
             The resolution of angle bins away from the center.
+        num_angular_center_bins : int, optional
+            The number of bins around the center (around zero).
         """
         dpole = DiscretizedCartPole(
             position_bins=position_bins,
@@ -82,7 +86,10 @@ class CartpoleWrapper(gym.Wrapper):
             angular_velocity_bins=angular_velocity_bins,
             angular_center_resolution=angular_center_resolution,
             angular_outer_resolution=angular_outer_resolution,
+            num_angular_center_bins=num_angular_center_bins,
+            timestep=timestep,
         )
+        self.dpole = dpole
         self._P = dpole.P
         self._transform_obs = dpole.transform_obs
         env = CustomTransformObservation(

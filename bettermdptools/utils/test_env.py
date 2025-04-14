@@ -11,7 +11,7 @@ Simulation of the agent's decision process after it has learned a policy.
 
 import gymnasium as gym
 import numpy as np
-
+import tqdm
 
 class TestEnv:
     def __init__(self):
@@ -26,6 +26,7 @@ class TestEnv:
         pi=None,
         user_input=False,
         convert_state_obs=lambda state: state,
+        return_final_state=False
     ):
         """
         Parameters
@@ -44,6 +45,7 @@ class TestEnv:
 
         convert_state_obs {lambda}: Optionally used in environments where state observation is transformed.
 
+        return_final_state {Boolean}, default = False: If True, return the last state of the environment.
 
         Returns
         ----------------------------
@@ -59,6 +61,8 @@ class TestEnv:
                 env = gym.make(env_name, desc=desc, render_mode="human")
         n_actions = env.action_space.n
         test_scores = np.full([n_iters], np.nan)
+        state_track = []
+        pbar = tqdm.tqdm(total=n_iters, desc="Testing", unit="episodes", leave=False)
         for i in range(0, n_iters):
             state, info = env.reset()
             done = False
@@ -94,5 +98,12 @@ class TestEnv:
                 state = next_state
                 total_reward = reward + total_reward
             test_scores[i] = total_reward
+            state_track.append(state)
+            pbar.update(1)
         env.close()
+        pbar.close()
+        
+        if return_final_state:
+            state_track = np.array(state_track)
+            return test_scores, state_track
         return test_scores

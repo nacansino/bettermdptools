@@ -24,6 +24,7 @@ Model-based learning algorithms: Value Iteration and Policy Iteration
 import warnings
 
 import numpy as np
+from tqdm.auto import tqdm
 
 
 class Planner:
@@ -114,6 +115,8 @@ class Planner:
                 Policy mapping states to actions.
             pi_track : list
                 List of policy mapping per iteration
+            wall_time : float
+                Time taken to learn the policy.
         """
         S = len(self.P)
         A = len(self.P[0])
@@ -143,6 +146,7 @@ class Planner:
         # Simpler way to handle done states
         not_done_array = 1 - done_array
         i = 0
+        pbar = tqdm(total=n_iters, leave=False, desc="Value Iteration")
         converged = False
         while i < n_iters - 1 and not converged:
             i += 1
@@ -160,11 +164,17 @@ class Planner:
             V = V_new
             V_track[i] = V
             pi_track.append(dict(enumerate(np.argmax(Q, axis=1))))
-
+            
+            pbar.update(1)
+        
+        if converged:
+            pbar.update(n_iters - i)
+        pbar.close()
+        
         if not converged:
             warnings.warn("Max iterations reached before convergence. Check n_iters.")
 
-        return V, V_track, dict(enumerate(np.argmax(Q, axis=1))), pi_track
+        return V, V_track, dict(enumerate(np.argmax(Q, axis=1))), pi_track, pbar.format_dict['elapsed']
 
     def policy_iteration(self, gamma=1.0, n_iters=50, theta=1e-10, dtype=np.float32):
         """
@@ -190,6 +200,8 @@ class Planner:
                 Policy mapping states to actions.
             pi_track : list
                 List of policy mapping per iteration
+            wall_time : float
+                Time taken to learn the policy.
         """
         random_actions = np.random.choice(tuple(self.P[0].keys()), len(self.P))
 
@@ -199,6 +211,7 @@ class Planner:
         V = np.zeros(len(self.P), dtype=dtype)
         V_track = np.zeros((n_iters, len(self.P)), dtype=dtype)
         i = 0
+        pbar = tqdm(total=n_iters, leave=False, desc="Policy Iteration")
         converged = False
         while i < n_iters - 1 and not converged:
             i += 1
@@ -209,10 +222,15 @@ class Planner:
             pi_track.append(pi)
             if old_pi == pi:
                 converged = True
+            pbar.update(1)
+        
+        if converged:
+            pbar.update(n_iters - i)
+        pbar.close()
 
         if not converged:
             warnings.warn("Max iterations reached before convergence.  Check n_iters.")
-        return V, V_track, pi, pi_track
+        return V, V_track, pi, pi_track, pbar.format_dict['elapsed']
 
     def policy_evaluation(self, pi, prev_V, gamma=1.0, theta=1e-10, dtype=np.float32):
         """
